@@ -23,7 +23,7 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "fraud_ops_2024_xgb")
 
 MODELS   = os.path.join(BASE, "models")
-PLOTS    = os.path.join(BASE, "notebooks/plots")
+PLOTS    = os.path.join(BASE, "models")   # fraud_stats.json lives here
 DATA_CSV = os.path.join(BASE, "data/raw/creditcard.csv")
 USERS_F  = os.path.join(os.path.dirname(os.path.abspath(__file__)), "users.json")
 
@@ -257,30 +257,24 @@ def chart_feature_imp():
     return fig_json(fig)
 
 def chart_threshold():
-    a = arts()
     try:
-        X_test = joblib.load(os.path.join(BASE, "data/processed/X_test.pkl"))
-        y_test = joblib.load(os.path.join(BASE, "data/processed/y_test.pkl"))
-        proba  = a["model"].predict_proba(X_test)[:,1]
-        from sklearn.metrics import fbeta_score, precision_score, recall_score
-        ts = np.arange(0.05, 0.90, 0.01)
-        f2s, precs, recs = [], [], []
-        for t in ts:
-            yp = (proba >= t).astype(int)
-            if yp.sum() == 0: f2s.append(0); precs.append(0); recs.append(0); continue
-            f2s.append(fbeta_score(y_test, yp, beta=2))
-            precs.append(precision_score(y_test, yp, zero_division=0))
-            recs.append(recall_score(y_test, yp, zero_division=0))
-        best = ts[np.argmax(f2s)]
+        curve_path = os.path.join(MODELS, "threshold_curve.json")
+        with open(curve_path) as f:
+            d = json.load(f)
+        ts    = d["thresholds"]
+        f2s   = d["f2"]
+        precs = d["precision"]
+        recs  = d["recall"]
+        best  = ts[int(np.argmax(f2s))]
         fig = go.Figure()
-        fig.add_scatter(x=ts, y=f2s,   name="F2 Score",  line=dict(color="#E74C3C",width=2.5))
-        fig.add_scatter(x=ts, y=precs, name="Precision", line=dict(color="#3498DB",width=2,dash="dash"))
-        fig.add_scatter(x=ts, y=recs,  name="Recall",    line=dict(color="#27AE60",width=2,dash="dot"))
+        fig.add_scatter(x=ts, y=f2s,   name="F2 Score",  line=dict(color="#E74C3C", width=2.5))
+        fig.add_scatter(x=ts, y=precs, name="Precision", line=dict(color="#3498DB", width=2, dash="dash"))
+        fig.add_scatter(x=ts, y=recs,  name="Recall",    line=dict(color="#27AE60", width=2, dash="dot"))
         fig.add_vline(x=best, line_dash="dash", line_color="#F39C12",
                       annotation_text=f"Best={best:.2f}")
         fig.update_layout(title="F2 / Precision / Recall vs Threshold",
-                          xaxis_title="Threshold", legend=dict(x=0.7,y=0.5),
-                          **{**DARK,"height":320})
+                          xaxis_title="Threshold", legend=dict(x=0.7, y=0.5),
+                          **{**DARK, "height": 320})
         return fig_json(fig)
     except Exception:
         return fig_json(go.Figure())

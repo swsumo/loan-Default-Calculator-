@@ -10,7 +10,7 @@ warnings.filterwarnings("ignore")
 
 sns.set_style("darkgrid")
 DATA   = "data/raw/creditcard.csv"
-OUTDIR = "notebooks/plots"
+OUTDIR = "models"
 
 def load():
     df = pd.read_csv(DATA)
