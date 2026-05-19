@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Fraud Detection{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <script src="https://cdn.plot.ly/plotly-2.26.0.min.js"></script>
+  {% block head %}{% endblock %}
+</head>
+<body>
+<div class="app">
+
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="brand">Fraud Detection</div>
+    </div>
+
+    {% if session.get('user') %}
+    <div class="sidebar-user">
+      <div class="name">{{ session.get('full_name', session.get('user')) }}</div>
+      <div class="role role-{{ session.get('role','viewer') }}">
+        {{ session.get('role','viewer').upper() }}
+      </div>
+      <div class="dept">{{ session.get('department','') }}</div>
+    </div>
+    {% endif %}
+
+    <nav>
+      <div class="nav-section">Main</div>
+      <a href="{{ url_for('dashboard') }}"
+         class="{{ 'active' if request.endpoint == 'dashboard' }}">
+        Dashboard
+      </a>
+      <a href="{{ url_for('metrics') }}"
+         class="{{ 'active' if request.endpoint == 'metrics' }}">
+        Model Metrics
+      </a>
+
+      <div class="nav-section">Tools</div>
+      <a href="{{ url_for('try_model') }}"
+         class="{{ 'active' if request.endpoint == 'try_model' }}">
+        Try the Model
+      </a>
+      <a href="{{ url_for('upload') }}"
+         class="{{ 'active' if request.endpoint == 'upload' }}">
+        Upload Data
+      </a>
+    </nav>
+
+    {% block sidebar_stats %}{% endblock %}
+
+    <div class="sidebar-footer">
+      <a href="{{ url_for('logout') }}" class="btn-logout">Logout</a>
+    </div>
+  </aside>
+
+  <div class="main">
+    <div class="topbar">
+      <div class="topbar-title">{% block page_title %}{% endblock %}</div>
+      <div class="topbar-right">
+        <span class="text-muted text-sm">{{ session.get('full_name','') }}</span>
+        <span class="badge badge-{{ session.get('role','viewer') }}">
+          {{ session.get('role','viewer') }}
+        </span>
+      </div>
+    </div>
+
+    <div class="content">
+      {% block content %}{% endblock %}
+    </div>
+  </div>
+
+</div>
+
+<script src="{{ url_for('static', filename='js/main.js') }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

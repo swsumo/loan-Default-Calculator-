@@ -1,0 +1,10 @@
+{
+  "xgboost_fraud": {
+    "f2_optimal": 0.79,
+    "precision_70": 0.79
+  },
+  "random_forest_fraud": {
+    "f2_optimal": 0.73,
+    "precision_70": 0.66
+  }
+}

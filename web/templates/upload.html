@@ -1,0 +1,357 @@
+{% extends "base.html" %}
+{% block title %}Upload Data — Fraud Detection{% endblock %}
+{% block page_title %}Upload Data{% endblock %}
+
+{% block content %}
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:22px;margin-bottom:22px">
+  <!-- Upload zone -->
+  <div class="card">
+    <div class="card-title">Upload Transactions File</div>
+    <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+      <div class="drop-text" style="font-size:18px;margin-bottom:4px">Drop your CSV or Excel file here</div>
+      <div class="drop-sub">or click to browse &mdash; .csv, .xlsx, .xls accepted</div>
+      <div id="fileName" style="margin-top:14px;font-weight:600;color:var(--primary)"></div>
+    </div>
+    <input type="file" id="fileInput" accept=".csv,.xlsx,.xls" style="display:none" onchange="fileSelected(this)">
+
+    <div style="margin-top:16px;display:flex;gap:10px">
+      <button class="btn btn-primary" id="scoreBtn" onclick="scoreFile()" disabled>
+        Score All Transactions
+      </button>
+      <button class="btn btn-ghost" onclick="downloadTemplate()">Download Template</button>
+    </div>
+
+    <div id="progressWrap" style="display:none;margin-top:14px">
+      <div style="font-size:13px;color:var(--muted);margin-bottom:6px" id="progressLabel">Processing…</div>
+      <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
+    </div>
+  </div>
+
+  <!-- Column guide -->
+  <div class="card">
+    <div class="card-title">Column Guide (ULB Credit Card Format)</div>
+    <div class="tbl-wrap" style="max-height:280px;overflow-y:auto">
+      <table>
+        <thead><tr><th>Column</th><th>Type</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td><code>V1 … V28</code></td><td>float</td><td>PCA-anonymised behavioural features</td></tr>
+          <tr><td><code>Amount</code></td><td>float</td><td>Transaction amount in euros</td></tr>
+          <tr><td><code>Time</code></td><td>float</td><td>Optional — seconds since first txn; used to derive hour</td></tr>
+          <tr><td><code>Class</code></td><td>0 / 1</td><td>Optional — true label for accuracy reporting</td></tr>
+          <tr><td><code>card_id</code></td><td>string</td><td>Optional — if present, velocity per card is computed and flagged</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="notice notice-info mt-4">
+      Model trained on 284,807 labeled transactions (0.17% fraud rate).
+    </div>
+    <div class="mt-4">
+      <a href="/try" class="btn btn-outline btn-sm">Try individual transactions</a>
+    </div>
+  </div>
+</div>
+
+<!-- Results (hidden until upload) -->
+<div id="resultsSection" style="display:none">
+  <!-- Summary KPIs -->
+  <div class="section-header mb-4">
+    <div class="section-title">Batch Scoring Results</div>
+    <div class="d-flex gap-3">
+      <button class="btn btn-success btn-sm" onclick="downloadResults('all')">All Results CSV</button>
+      <button class="btn btn-danger btn-sm" onclick="downloadResults('fraud')">Fraud Only CSV</button>
+    </div>
+  </div>
+
+  <div class="kpi-grid mb-6" id="kpiRow"></div>
+  <div id="driftAlert" style="display:none;margin-bottom:18px"></div>
+  <div id="velocityAlert" style="display:none;margin-bottom:18px"></div>
+
+  <!-- AI Summary -->
+  <div class="card mb-6" id="aiSummaryCard">
+    <div class="section-header mb-4">
+      <div class="card-title" style="margin:0">AI Analyst Summary</div>
+      <button class="btn btn-ghost btn-sm" id="aiSummaryBtn" onclick="getSummary()">
+        Generate Summary
+      </button>
+    </div>
+    <div id="aiSummaryContent">
+      <p class="text-muted text-sm">Click Generate Summary for an AI-written analyst report of this batch.</p>
+    </div>
+  </div>
+
+  <!-- Risk Distribution Chart -->
+  <div class="chart-wrap mb-6" style="padding:16px">
+    <div id="riskDistChart" style="height:280px"></div>
+  </div>
+
+  <!-- Results table -->
+  <div class="card">
+    <div class="section-header mb-4">
+      <div class="card-title" style="margin:0">Transaction Results</div>
+      <div class="d-flex gap-3 align-center">
+        <label class="text-muted text-sm">Filter:</label>
+        <select id="filterSel" class="form-control" style="width:auto;padding:6px 10px" onchange="applyFilter()">
+          <option value="all">All</option>
+          <option value="BLOCK">BLOCK only</option>
+          <option value="REVIEW">REVIEW only</option>
+          <option value="APPROVE">APPROVE only</option>
+        </select>
+      </div>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr><th>#</th><th>Amount (₹)</th><th>Hour</th><th>Risk %</th><th>Decision</th>
+          <th id="velocityHeader" style="display:none">Card Velocity</th></tr>
+        </thead>
+        <tbody id="resultsTbody"></tbody>
+      </table>
+    </div>
+    <div class="text-muted text-sm mt-4" id="resultCount"></div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+let allResults = [], selectedFile = null;
+
+// Drag & drop
+const dz = document.getElementById('dropZone');
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+dz.addEventListener('drop', e => {
+  e.preventDefault(); dz.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) setFile(file);
+});
+
+function fileSelected(input) {
+  if (input.files[0]) setFile(input.files[0]);
+}
+
+function setFile(file) {
+  selectedFile = file;
+  document.getElementById('fileName').textContent = '📄 ' + file.name + ' (' + (file.size/1024).toFixed(1) + ' KB)';
+  document.getElementById('scoreBtn').disabled = false;
+}
+
+async function scoreFile() {
+  if (!selectedFile) return;
+  const btn = document.getElementById('scoreBtn');
+  btn.innerHTML = '<span class="spinner"></span> Scoring...';
+  btn.disabled = true;
+
+  const pw = document.getElementById('progressWrap');
+  pw.style.display = 'block';
+  const fill = document.getElementById('progressFill');
+  const label = document.getElementById('progressLabel');
+
+  // Animate progress
+  label.textContent = 'Uploading and scoring…';
+  fill.style.width = '30%';
+
+  const fd = new FormData();
+  fd.append('file', selectedFile);
+
+  try {
+    fill.style.width = '60%';
+    const resp = await fetch('/api/upload', { method:'POST', body: fd });
+    fill.style.width = '90%';
+    const data = await resp.json();
+    fill.style.width = '100%';
+    label.textContent = 'Done!';
+
+    if (data.error) { alert('Error: ' + data.error); return; }
+    allResults = data.results;
+    renderResults(data);
+  } catch(e) {
+    alert('Upload failed: ' + e);
+  } finally {
+    btn.innerHTML = 'Score All Transactions';
+    btn.disabled = false;
+    setTimeout(() => { pw.style.display = 'none'; fill.style.width = '0%'; }, 1500);
+  }
+}
+
+function renderResults(data) {
+  document.getElementById('resultsSection').style.display = 'block';
+  document.getElementById('resultsSection').scrollIntoView({behavior:'smooth'});
+
+  document.getElementById('kpiRow').innerHTML = `
+    <div class="kpi"><div class="kpi-label">Total</div><div class="kpi-value">${data.total.toLocaleString()}</div></div>
+    <div class="kpi red"><div class="kpi-label">BLOCK</div><div class="kpi-value">${data.fraud_count}</div><div class="kpi-sub">${data.fraud_rate.toFixed(1)}% of batch</div></div>
+    <div class="kpi orange"><div class="kpi-label">REVIEW</div><div class="kpi-value">${data.review_count}</div></div>
+    <div class="kpi green"><div class="kpi-label">APPROVE</div><div class="kpi-value">${data.approve_count}</div></div>
+    <div class="kpi"><div class="kpi-label">Avg Risk Score</div><div class="kpi-value">${data.avg_risk}%</div></div>
+  `;
+
+  window._psiStatus = data.psi_status || 'stable';
+
+  // Velocity alerts
+  const velDiv = document.getElementById('velocityAlert');
+  if (data.has_velocity && data.velocity_alerts && data.velocity_alerts.length > 0) {
+    velDiv.style.display = 'block';
+    const rows = data.velocity_alerts.map(a =>
+      `<li><strong>Card ${a.card_id}</strong>: ${a.txn_count} transactions in this batch, avg risk ${a.avg_risk}%</li>`
+    ).join('');
+    velDiv.innerHTML = `<div class="notice notice-error">
+      <strong>Velocity Alert:</strong> ${data.velocity_alerts.length} card(s) with 3+ transactions detected in this batch — possible card testing or burst fraud.<ul style="margin:6px 0 0 16px">${rows}</ul>
+    </div>`;
+  } else {
+    velDiv.style.display = 'none';
+  }
+
+  // Show velocity column header if present
+  if (data.has_velocity) {
+    document.getElementById('velocityHeader').style.display = '';
+  }
+
+  // PSI Drift Alert
+  const driftDiv = document.getElementById('driftAlert');
+  if (data.psi !== null) {
+    const psiStatus = data.psi_status;
+    const cls  = psiStatus==='stable' ? 'notice-success' : psiStatus==='moderate_shift' ? 'notice-info' : 'notice-error';
+    const icon = psiStatus==='stable' ? '' : psiStatus==='moderate_shift' ? '' : '';
+    const msg  = psiStatus==='stable'
+      ? `Data distribution looks stable (PSI = ${data.psi}). This batch is similar to the training data.`
+      : psiStatus==='moderate_shift'
+      ? `Moderate distribution shift detected (PSI = ${data.psi}). Amount distribution differs somewhat from training data — predictions may be less reliable.`
+      : `Major distribution shift (PSI = ${data.psi}). This batch looks very different from training data. Consider retraining the model.`;
+    driftDiv.style.display = 'block';
+    driftDiv.innerHTML = `<div class="notice ${cls}">${icon} <strong>Data Drift Check:</strong> ${msg}</div>`;
+  }
+
+  applyFilter();
+
+  // Risk distribution Plotly chart
+  const riskScores = allResults.map(r => r.risk_pct);
+  const barColors  = riskScores.map(r => r > 60 ? '#E74C3C' : r > 30 ? '#F39C12' : '#27AE60');
+  Plotly.newPlot('riskDistChart', [{
+    x: riskScores, type: 'histogram', nbinsx: 25,
+    marker: {color: '#3498DB', opacity: 0.8},
+    hovertemplate: 'Risk: %{x}%<br>Count: %{y}<extra></extra>',
+  }], {
+    title: {text: 'Risk Score Distribution', font: {color:'#e2e8f0', size:14}},
+    xaxis: {title: 'Risk Score (%)', range:[0,100], color:'#94a3b8'},
+    yaxis: {title: 'Transactions', color:'#94a3b8'},
+    plot_bgcolor: '#111827', paper_bgcolor: '#111827',
+    font: {color: '#e2e8f0', size:12},
+    shapes: [
+      {type:'line', x0:30, x1:30, y0:0, y1:1, yref:'paper',
+       line:{color:'#F39C12', width:1.5, dash:'dash'}},
+      {type:'line', x0:60, x1:60, y0:0, y1:1, yref:'paper',
+       line:{color:'#E74C3C', width:1.5, dash:'dash'}},
+    ],
+    annotations: [
+      {x:15, y:1, yref:'paper', text:'APPROVE', showarrow:false,
+       font:{color:'#27AE60', size:11}},
+      {x:45, y:1, yref:'paper', text:'REVIEW', showarrow:false,
+       font:{color:'#F39C12', size:11}},
+      {x:80, y:1, yref:'paper', text:'BLOCK', showarrow:false,
+       font:{color:'#E74C3C', size:11}},
+    ],
+    margin: {t:50, b:40, l:55, r:20}, height:280
+  }, {responsive:true, displayModeBar:false});
+}
+
+function applyFilter() {
+  const filter = document.getElementById('filterSel').value;
+  const filtered = filter === 'all' ? allResults : allResults.filter(r => r.recommendation === filter);
+  const tbody = document.getElementById('resultsTbody');
+  tbody.innerHTML = filtered.map(r => {
+    const rc = r.recommendation === 'BLOCK' ? 'row-block' : r.recommendation === 'REVIEW' ? 'row-review' : 'row-approve';
+    return `<tr class="${rc}">
+      <td>${r.row}</td>
+      <td>₹${r.amount.toFixed(2)}</td>
+      <td>${r.hour}:00</td>
+      <td><strong>${r.risk_pct}%</strong></td>
+      <td><span class="badge badge-${r.recommendation}">${r.recommendation}</span></td>
+      ${r.card_txn_count !== undefined
+        ? `<td style="color:${r.velocity_flag ? 'var(--danger)' : 'inherit'};font-weight:${r.velocity_flag?'700':'400'}">${r.card_txn_count} txns${r.velocity_flag ? ' ⚡' : ''}</td>`
+        : '<td style="display:none"></td>'}
+    </tr>`;
+  }).join('');
+  document.getElementById('resultCount').textContent =
+    `Showing ${filtered.length.toLocaleString()} of ${allResults.length.toLocaleString()} transactions`;
+}
+
+async function getSummary() {
+  const btn  = document.getElementById('aiSummaryBtn');
+  const content = document.getElementById('aiSummaryContent');
+  btn.innerHTML = '<span class="spinner"></span>';
+  btn.disabled  = true;
+
+  // Compute top rows
+  const topRows = allResults.filter(r => r.recommendation === 'BLOCK').slice(0, 5);
+
+  const payload = {
+    total:         allResults.length,
+    fraud_count:   allResults.filter(r => r.recommendation==='BLOCK').length,
+    review_count:  allResults.filter(r => r.recommendation==='REVIEW').length,
+    approve_count: allResults.filter(r => r.recommendation==='APPROVE').length,
+    fraud_rate:    parseFloat(document.querySelector('#kpiRow .kpi.red .kpi-sub')?.textContent || 0),
+    avg_risk:      parseFloat(allResults.reduce((s,r)=>s+r.risk_pct,0)/Math.max(allResults.length,1)),
+    psi_status:    window._psiStatus || 'stable',
+    top_rows:      topRows,
+  };
+
+  // Fix fraud_rate
+  payload.fraud_rate = payload.fraud_count / Math.max(payload.total, 1) * 100;
+
+  try {
+    const resp = await fetch('/api/summarize', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const data = await resp.json();
+    if (data.summary) {
+      content.innerHTML = `
+        <div style="background:#eff8ff;border-left:4px solid #3498DB;padding:14px 16px;
+                    border-radius:0 8px 8px 0;line-height:1.7;color:#1C2833;font-size:14px">
+          ${data.summary.replace(/\n/g,'<br>')}
+        </div>`;
+    } else if (data.error === 'GROQ_API_KEY not set') {
+      content.innerHTML = `<div class="notice notice-info">
+        Set <code>GROQ_API_KEY</code> environment variable to enable AI summaries.
+        Get a free key at <strong>console.groq.com</strong>.
+      </div>`;
+    } else {
+      content.innerHTML = `<div class="notice notice-error">Error: ${data.error}</div>`;
+    }
+  } catch(e) {
+    content.innerHTML = `<div class="notice notice-error">Request failed: ${e}</div>`;
+  } finally {
+    btn.innerHTML = 'Regenerate';
+    btn.disabled  = false;
+  }
+}
+
+function downloadResults(type) {
+  const rows = type === 'fraud' ? allResults.filter(r => r.recommendation === 'BLOCK') : allResults;
+  const header = 'Row,Amount,Transaction Type,Risk %,Decision\n';
+  const csv = rows.map(r => `${r.row},${r.amount},${r.transaction_type},${r.risk_pct},${r.recommendation}`).join('\n');
+  const blob = new Blob([header+csv], {type:'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = type === 'fraud' ? 'fraud_only.csv' : 'all_results.csv';
+  a.click();
+}
+
+function downloadTemplate() {
+  const header = 'amount,transaction_type,sender_account_age_days,sender_txn_count_7d,sender_txn_count_1d,hour_of_day,day_of_week,is_new_receiver,sender_avg_txn_amount,device_change,ip_country_mismatch,beneficiary_account_age_days,failed_attempts_last_hour\n';
+  const rows = [
+    '45000,UPI,30,35,12,2,1,1,800,1,1,5,3',
+    '1500,UPI,800,6,1,14,3,0,1200,0,0,500,0',
+    '9800,IMPS,120,18,5,23,5,1,1500,0,0,25,1',
+  ].join('\n');
+  const blob = new Blob([header+rows], {type:'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'fraud_detection_template.csv';
+  a.click();
+}
+</script>
+{% endblock %}

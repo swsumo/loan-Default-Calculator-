@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Fraud Detection{% endblock %}
+{% block page_title %}Operations Dashboard{% endblock %}
+
+{% block sidebar_stats %}
+<div class="sidebar-stats">
+  <div class="stat-row"><span>Transactions</span><span class="stat-val">{{ "{:,}".format(stats.get('total_transactions',0)) }}</span></div>
+  <div class="stat-row"><span>Fraud Count</span><span class="stat-val" style="color:#E74C3C">{{ "{:,}".format(stats.get('total_fraud_count',0)) }}</span></div>
+  <div class="stat-row"><span>Fraud Rate</span><span class="stat-val">{{ "%.2f"|format(stats.get('overall_fraud_rate',0)) }}%</span></div>
+  <div class="stat-row"><span>AUC</span><span class="stat-val" style="color:#27AE60">{{ "%.4f"|format(xgb.get('roc_auc',0)) }}</span></div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<!-- KPI Row -->
+<div class="kpi-grid mb-6">
+  <div class="kpi">
+    <div class="kpi-label">Total Transactions</div>
+    <div class="kpi-value">{{ "{:,}".format(stats.get('total_transactions',0)) }}</div>
+    <div class="kpi-sub">Across 90 days</div>
+  </div>
+  <div class="kpi red">
+    <div class="kpi-label">Fraud Cases</div>
+    <div class="kpi-value">{{ "{:,}".format(stats.get('total_fraud_count',0)) }}</div>
+    <div class="kpi-sub">Confirmed fraud events</div>
+  </div>
+  <div class="kpi orange">
+    <div class="kpi-label">Fraud Rate</div>
+    <div class="kpi-value">{{ "%.2f"|format(stats.get('overall_fraud_rate',0)) }}%</div>
+    <div class="kpi-sub">Overall prevalence</div>
+  </div>
+  <div class="kpi blue">
+    <div class="kpi-label">XGB ROC-AUC</div>
+    <div class="kpi-value">{{ "%.4f"|format(xgb.get('roc_auc',0)) }}</div>
+    <div class="kpi-sub">Primary model</div>
+  </div>
+  <div class="kpi green">
+    <div class="kpi-label">XGB PR-AUC</div>
+    <div class="kpi-value">{{ "%.4f"|format(xgb.get('pr_auc',0)) }}</div>
+    <div class="kpi-sub">Imbalance-aware</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">F2 Threshold</div>
+    <div class="kpi-value">{{ thresh.get('f2_optimal', '—') }}</div>
+    <div class="kpi-sub">Recall-optimised</div>
+  </div>
+</div>
+
+<!-- Key Insights -->
+<div class="section-header mt-6 mb-4">
+  <div class="section-title">Key Fraud Insights</div>
+</div>
+<div class="chart-grid-3 mb-6">
+  <div class="card">
+    <div class="card-title">⏰ When Fraud Happens</div>
+    <div class="metric-list">
+      <div class="metric-item">
+        <span class="m-label">Peak Hour</span>
+        <span class="m-value" style="color:var(--danger)">{{ stats.get('top_fraud_hour','?') }}:00</span>
+      </div>
+      <div class="metric-item">
+        <span class="m-label">Peak Day</span>
+        <span class="m-value">{{ day_names[stats.get('peak_fraud_day',0)] }}</span>
+      </div>
+      <div class="metric-item">
+        <span class="m-label">Night Rate (1–5am)</span>
+        <span class="m-value" style="color:var(--danger)">{{ "%.1f"|format(stats.get('fraud_rate_night',0)) }}%</span>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title">💰 Amount Profile</div>
+    <div class="metric-list">
+      <div class="metric-item">
+        <span class="m-label">Avg Fraud Amount</span>
+        <span class="m-value">₹{{ "{:,.0f}".format(stats.get('avg_fraud_amount',0)) }}</span>
+      </div>
+      <div class="metric-item">
+        <span class="m-label">Avg Legit Amount</span>
+        <span class="m-value">₹{{ "{:,.0f}".format(stats.get('avg_legit_amount',0)) }}</span>
+      </div>
+      <div class="metric-item">
+        <span class="m-label">High-Amount Fraud Rate</span>
+        <span class="m-value" style="color:var(--danger)">{{ "%.1f"|format(stats.get('fraud_rate_high_amount',0)) }}%</span>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title">🚩 Signal Fraud Rates</div>
+    <div class="metric-list">
+      <div class="metric-item">
+        <span class="m-label">New Beneficiary &lt;30d</span>
+        <span class="m-value" style="color:var(--danger)">{{ "%.1f"|format(stats.get('fraud_rate_new_beneficiary',0)) }}%</span>
+      </div>
+      <div class="metric-item">
+        <span class="m-label">IP Country Mismatch</span>
+        <span class="m-value" style="color:var(--danger)">{{ "%.1f"|format(stats.get('fraud_rate_ip_mismatch',0)) }}%</span>
+      </div>
+      <div class="metric-item">
+        <span class="m-label">Device Change</span>
+        <span class="m-value" style="color:var(--warning)">{{ "%.1f"|format(stats.get('fraud_rate_device_change',0)) }}%</span>
+      </div>
+      <div class="metric-item">
+        <span class="m-label">New Receiver</span>
+        <span class="m-value" style="color:var(--warning)">{{ "%.1f"|format(stats.get('fraud_rate_new_receiver',0)) }}%</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

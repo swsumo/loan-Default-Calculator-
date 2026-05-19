@@ -1,0 +1,416 @@
+{% extends "base.html" %}
+{% block title %}Try the Model — Fraud Detection{% endblock %}
+{% block page_title %}Try the Model{% endblock %}
+
+{% block content %}
+
+<div style="display:grid;grid-template-columns:400px 1fr;gap:22px;align-items:start">
+
+  <!-- ── Left: Sample Picker + Amount/Hour ─────────────────── -->
+  <div>
+    <div class="card mb-4">
+      <div class="card-title">Select a Real Transaction</div>
+
+      <div class="mb-4">
+        <div class="form-label">Fraud Samples</div>
+        <div style="display:flex;flex-direction:column;gap:6px" id="fraudBtns">
+          {% for s in samples.get('fraud',[]) %}{% set i = loop.index0 %}
+          <button class="btn btn-ghost btn-sm" style="justify-content:space-between;text-align:left"
+                  onclick="loadSample('fraud', {{ i }})">
+            <span>Fraud #{{ i+1 }}</span>
+            <span style="color:var(--danger);font-weight:700">
+              ₹{{ "%.0f"|format(s.get('Amount',0)) }} &nbsp; {{ s.get('_risk_pct','?') }}% risk
+            </span>
+          </button>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div>
+        <div class="form-label">Legitimate Samples</div>
+        <div style="display:flex;flex-direction:column;gap:6px" id="legitBtns">
+          {% for s in samples.get('legit',[]) %}{% set i = loop.index0 %}
+          <button class="btn btn-ghost btn-sm" style="justify-content:space-between;text-align:left"
+                  onclick="loadSample('legit', {{ i }})">
+            <span>Legit #{{ i+1 }}</span>
+            <span style="color:var(--success);font-weight:700">
+              ₹{{ "%.0f"|format(s.get('Amount',0)) }} &nbsp; {{ s.get('_risk_pct','?') }}% risk
+            </span>
+          </button>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Override Amount / Hour -->
+    <div class="card mb-4">
+      <div class="card-title">Override Amount & Hour</div>
+      <p class="text-muted text-sm mb-4">
+        Load a sample above first, then adjust Amount and Hour.
+      </p>
+      <div class="form-grid-2">
+        <div class="form-group">
+          <label class="form-label">Amount (₹)</label>
+          <input type="number" id="override_amount" class="form-control"
+                 placeholder="e.g. 250" step="0.01" min="0">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Hour of Day (0–23)</label>
+          <input type="number" id="override_hour" class="form-control"
+                 placeholder="e.g. 2" min="0" max="23">
+        </div>
+      </div>
+    </div>
+
+    <button class="btn btn-primary btn-block btn-lg" id="checkBtn"
+            onclick="checkTransaction()" disabled>
+      Score This Transaction
+    </button>
+  </div>
+
+  <!-- ── Right: Results ────────────────────────────────────── -->
+  <div>
+    <div id="placeholder" class="card" style="text-align:center;padding:60px 24px">
+      <div style="font-size:16px;font-weight:600;margin-bottom:8px;color:var(--muted)">
+        Select a sample transaction on the left
+      </div>
+      <p class="text-muted">The model will score it and show which features drove the decision.</p>
+    </div>
+
+    <div id="results" class="result-panel">
+      <div class="chart-wrap mb-4">
+        <div id="gauge" style="height:260px"></div>
+      </div>
+
+      <div id="decisionBanner" class="alert mb-4"></div>
+
+      <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:18px">
+        <div class="kpi">
+          <div class="kpi-label">Risk Score</div>
+          <div class="kpi-value" id="kpiRisk">—</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">Decision</div>
+          <div class="kpi-value" id="kpiDec">—</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">Level</div>
+          <div class="kpi-value" id="kpiLevel">—</div>
+        </div>
+      </div>
+
+      <!-- SHAP Factors -->
+      <div class="card mb-4">
+        <div class="card-title">Top Risk Factors (SHAP)</div>
+        <p class="text-muted text-sm mb-4">
+          SHAP values show how much each feature pushed the risk score up or down from the baseline.
+        </p>
+        <table class="factors-table">
+          <thead>
+            <tr><th>Feature</th><th>Value in this transaction</th><th>SHAP</th><th>Impact</th></tr>
+          </thead>
+          <tbody id="factorsBody"></tbody>
+        </table>
+      </div>
+
+      <!-- Transaction vs avg fraud/legit -->
+      <div class="card mb-4">
+        <div class="card-title">This Transaction vs Dataset Averages</div>
+        <div class="tbl-wrap">
+          <table>
+            <thead>
+              <tr><th>Feature</th><th>This Transaction</th><th>Avg Fraud</th><th>Avg Legit</th></tr>
+            </thead>
+            <tbody id="comparisonBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- AI Explanation -->
+      <div class="card mb-4" id="aiCard" style="display:none">
+        <div class="section-header mb-4">
+          <div class="card-title" style="margin:0">AI Analyst Explanation</div>
+          <button class="btn btn-ghost btn-sm" id="aiBtn" onclick="getExplanation()">
+            Generate
+          </button>
+        </div>
+        <div id="aiContent">
+          <p class="text-muted text-sm">
+            Click Generate to get a plain-English explanation of this risk score.
+          </p>
+        </div>
+      </div>
+
+      <!-- Session history -->
+      <div class="card">
+        <div class="section-header mb-4">
+          <div class="card-title" style="margin:0">Session History</div>
+          <button class="btn btn-ghost btn-sm" onclick="downloadHistory()">Export CSV</button>
+        </div>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th>#</th><th>Amount</th><th>Hour</th><th>Risk</th><th>Decision</th><th>Time</th></tr></thead>
+            <tbody id="historyBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const allSamples = {{ samples|tojson }};
+const fraudStats = {{ stats|tojson }};
+let currentTxn  = null;
+let history = [], cnt = 0;
+
+// Comparison averages (from training stats)
+const AVG = {
+  "Amount":       { fraud: {{ stats.get('avg_fraud_amount', 122) }}, legit: {{ stats.get('avg_legit_amount', 88) }} },
+  "hour_of_day":  { fraud: {{ stats.get('top_fraud_hour', 2) }},     legit: 14 },
+  "is_night":     { fraud: 0.35, legit: 0.02 },
+  "log_amount":   { fraud: 3.8,  legit: 3.5 },
+};
+
+function loadSample(type, idx) {
+  const s = allSamples[type][idx];
+  currentTxn = {...s};
+  document.getElementById('checkBtn').disabled = false;
+
+  // Show amount/hour in override fields
+  document.getElementById('override_amount').value = s.Amount || '';
+  document.getElementById('override_hour').value   = s.hour_of_day || 0;
+
+  // Highlight selected button
+  document.querySelectorAll('#fraudBtns button, #legitBtns button').forEach(b => {
+    b.style.background = '';
+  });
+  const btnGroup = type === 'fraud' ? '#fraudBtns' : '#legitBtns';
+  document.querySelectorAll(btnGroup + ' button')[idx].style.background = '#1e2d3d';
+}
+
+async function checkTransaction() {
+  if (!currentTxn) return;
+  const btn = document.getElementById('checkBtn');
+  btn.innerHTML = '<span class="spinner"></span> Scoring...';
+  btn.disabled = true;
+
+  // Apply overrides
+  const amt  = parseFloat(document.getElementById('override_amount').value);
+  const hour = parseInt(document.getElementById('override_hour').value);
+  const txn  = {...currentTxn};
+  if (!isNaN(amt))  txn["Amount"] = amt;
+  if (!isNaN(hour)) { txn["hour_of_day"] = hour; txn["Time"] = hour * 3600; }
+
+  try {
+    const resp = await fetch('/api/predict', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(txn)
+    });
+    const r = await resp.json();
+    if (r.error) { alert('Error: ' + r.error); return; }
+    renderResults(r, txn);
+  } catch(e) {
+    alert('Request failed: ' + e);
+  } finally {
+    btn.innerHTML = 'Score This Transaction';
+    btn.disabled = false;
+  }
+}
+
+function renderResults(r, txn) {
+  document.getElementById('placeholder').style.display = 'none';
+  document.getElementById('results').classList.add('visible');
+
+  const color = r.risk_pct > 60 ? '#E74C3C' : r.risk_pct > 30 ? '#F39C12' : '#27AE60';
+
+  Plotly.newPlot('gauge', [{
+    type: 'indicator', mode: 'gauge+number',
+    value: r.risk_pct,
+    number: { suffix: '%', font: { size: 44, color: '#e2e8f0' } },
+    title: { text: 'FRAUD RISK SCORE', font: { size: 13, color: '#94a3b8' } },
+    gauge: {
+      axis: { range: [0,100], tickcolor:'#64748b' },
+      bar: { color, thickness: 0.25 }, bgcolor: '#1e2d3d', bordercolor: '#1e2d3d',
+      steps: [
+        {range:[0,30],color:'#0d2e1a'},{range:[30,60],color:'#2d1f00'},
+        {range:[60,80],color:'#2d0a0a'},{range:[80,100],color:'#1a0020'},
+      ]
+    }
+  }], {
+    paper_bgcolor:'#111827', plot_bgcolor:'#111827',
+    font:{color:'#e2e8f0'}, margin:{t:40,b:10,l:20,r:20}, height:250
+  }, {responsive:true, displayModeBar:false});
+
+  const bannerCls = r.recommendation==='BLOCK' ? 'alert-block'
+                  : r.recommendation==='REVIEW' ? 'alert-review' : 'alert-approve';
+  const msg  = r.recommendation==='BLOCK' ? 'FRAUD — BLOCK TRANSACTION'
+             : r.recommendation==='REVIEW' ? 'SUSPICIOUS — REVIEW REQUIRED' : 'APPROVED';
+  const banner = document.getElementById('decisionBanner');
+  banner.className = `alert ${bannerCls}`;
+  banner.innerHTML = `${msg} &nbsp; (Risk: ${r.risk_pct}%)`;
+
+  document.getElementById('kpiRisk').textContent  = r.risk_pct + '%';
+  document.getElementById('kpiDec').textContent   = r.recommendation;
+  document.getElementById('kpiLevel').textContent = r.level;
+  const lc = r.level==='HIGH' ? 'var(--danger)' : r.level==='MEDIUM' ? 'var(--warning)' : 'var(--success)';
+  document.getElementById('kpiLevel').style.color = lc;
+
+  // Amount percentile sub-label
+  if (r.amount_percentile !== null && r.amount_percentile !== undefined) {
+    document.getElementById('kpiRisk').insertAdjacentHTML('afterend',
+      `<div class="kpi-sub">Amount: top ${(100-r.amount_percentile).toFixed(0)}% by size</div>`);
+  }
+
+  // Store result for AI explanation
+  window._lastResult = r;
+  window._lastTxn    = txn;
+  document.getElementById('aiCard').style.display = 'block';
+  document.getElementById('aiContent').innerHTML =
+    '<p class="text-muted text-sm">Click Generate to get a plain-English explanation of this risk score.</p>';
+
+  // Human-readable feature labels
+  const FEAT_LABELS = {
+    "amount_vs_hourly_median": "Amount vs typical for this hour",
+    "Amount":       "Transaction amount (₹)",
+    "log_amount":   "Transaction amount (log scale)",
+    "hour_of_day":  "Hour of transaction",
+    "is_night":     "Night-time transaction (1–5am)",
+  };
+  function featLabel(name) {
+    if (FEAT_LABELS[name]) return FEAT_LABELS[name];
+    // V-features: just show the code name
+    return name;
+  }
+
+  // SHAP factors
+  const fb = document.getElementById('factorsBody');
+  fb.innerHTML = '';
+  (r.factors||[]).forEach(f => {
+    const shapColor = f.direction==='up' ? 'var(--danger)' : 'var(--success)';
+    const arrow = f.direction==='up' ? '+' + f.shap : f.shap;
+    const label = featLabel(f.feature);
+
+    // Human-readable value description for interpretable features
+    let valueDesc = String(f.value);
+    if (f.feature === 'amount_vs_hourly_median') {
+      valueDesc = `${parseFloat(f.value).toFixed(1)}× typical`;
+    } else if (f.feature === 'Amount') {
+      valueDesc = `₹${parseFloat(f.value).toFixed(2)}`;
+    } else if (f.feature === 'hour_of_day') {
+      valueDesc = `${f.value}:00`;
+    } else if (f.feature === 'is_night') {
+      valueDesc = f.value === 1 || f.value === '1' ? 'Yes' : 'No';
+    }
+
+    fb.innerHTML += `<tr>
+      <td>${label}</td>
+      <td>${valueDesc}</td>
+      <td style="color:${shapColor};font-weight:600">${arrow}</td>
+      <td><span class="badge badge-${f.impact}">${f.impact}</span></td>
+    </tr>`;
+  });
+
+  // Comparison table
+  const cb = document.getElementById('comparisonBody');
+  cb.innerHTML = '';
+  const compFeatures = [
+    ["Amount (₹)", txn.Amount||0, AVG.Amount.fraud, AVG.Amount.legit],
+    ["Hour of Day", txn.hour_of_day||0, AVG.hour_of_day.fraud, AVG.hour_of_day.legit],
+    ["Is Night (1=yes)", txn.is_night||0, AVG.is_night.fraud, AVG.is_night.legit],
+  ];
+  compFeatures.forEach(([label, val, avgF, avgL]) => {
+    cb.innerHTML += `<tr>
+      <td>${label}</td>
+      <td><strong>${typeof val==='number' ? val.toFixed(2) : val}</strong></td>
+      <td style="color:var(--danger)">${typeof avgF==='number' ? avgF.toFixed(2) : avgF}</td>
+      <td style="color:var(--success)">${typeof avgL==='number' ? avgL.toFixed(2) : avgL}</td>
+    </tr>`;
+  });
+
+  // History
+  cnt++;
+  history.push({
+    n: cnt,
+    amount: '₹' + (txn.Amount||0).toFixed(2),
+    hour: txn.hour_of_day||0,
+    risk: r.risk_pct+'%',
+    decision: r.recommendation,
+    time: new Date().toLocaleTimeString()
+  });
+  const hb = document.getElementById('historyBody');
+  hb.innerHTML = history.slice().reverse().map(h => {
+    const rc = h.decision==='BLOCK' ? 'row-block' : h.decision==='REVIEW' ? 'row-review' : 'row-approve';
+    return `<tr class="${rc}">
+      <td>${h.n}</td><td>${h.amount}</td><td>${h.hour}:00</td>
+      <td><strong>${h.risk}</strong></td>
+      <td><span class="badge badge-${h.decision}">${h.decision}</span></td>
+      <td>${h.time}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function getExplanation() {
+  const r   = window._lastResult;
+  const txn = window._lastTxn;
+  if (!r) return;
+
+  const btn = document.getElementById('aiBtn');
+  btn.innerHTML = '<span class="spinner"></span>';
+  btn.disabled  = true;
+
+  const payload = {
+    risk_pct:           r.risk_pct,
+    recommendation:     r.recommendation,
+    amount:             txn.Amount || 0,
+    hour:               r.hour || txn.hour_of_day || 0,
+    is_night:           r.is_night || false,
+    factors:            r.factors || [],
+    threshold:          r.threshold,
+    amount_percentile:  r.amount_percentile,
+  };
+
+  try {
+    const resp = await fetch('/api/explain', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const data = await resp.json();
+    const content = document.getElementById('aiContent');
+    if (data.explanation) {
+      content.innerHTML = `
+        <div style="background:#f0fdf4;border-left:4px solid #27AE60;padding:14px 16px;
+                    border-radius:0 8px 8px 0;line-height:1.7;color:#1C2833;font-size:14px">
+          ${data.explanation.replace(/\n/g,'<br>')}
+        </div>`;
+    } else if (data.error === 'GROQ_API_KEY not set') {
+      content.innerHTML = `<div class="notice notice-info">
+        Set the <code>GROQ_API_KEY</code> environment variable to enable AI explanations.
+        Get a free key at <strong>console.groq.com</strong>.
+      </div>`;
+    } else {
+      content.innerHTML = `<div class="notice notice-error">Error: ${data.error}</div>`;
+    }
+  } catch(e) {
+    document.getElementById('aiContent').innerHTML =
+      `<div class="notice notice-error">Request failed: ${e}</div>`;
+  } finally {
+    btn.innerHTML = 'Regenerate';
+    btn.disabled  = false;
+  }
+}
+
+function downloadHistory() {
+  if (!history.length) return;
+  const csv = 'Row,Amount,Hour,Risk %,Decision,Time\n' +
+    history.map(h => `${h.n},${h.amount},${h.hour},${h.risk},${h.decision},${h.time}`).join('\n');
+  const a = Object.assign(document.createElement('a'),
+    {href: URL.createObjectURL(new Blob([csv],{type:'text/csv'})),
+     download:'fraud_session.csv'});
+  a.click();
+}
+</script>
+{% endblock %}

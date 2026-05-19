@@ -1,0 +1,43 @@
+{
+  "xgboost": {
+    "model": "XGBoost",
+    "roc_auc": 0.9721,
+    "pr_auc": 0.6628,
+    "f1": 0.6082,
+    "f2": 0.7091,
+    "precision": 0.4917,
+    "recall": 0.7973,
+    "fpr": 0.0014,
+    "threshold": 0.79,
+    "tp": 59,
+    "fp": 61,
+    "tn": 42587,
+    "fn": 15
+  },
+  "random_forest": {
+    "model": "Random Forest",
+    "roc_auc": 0.9751,
+    "pr_auc": 0.6386,
+    "f1": 0.7421,
+    "f2": 0.7743,
+    "precision": 0.6941,
+    "recall": 0.7973,
+    "fpr": 0.0006,
+    "threshold": 0.73,
+    "tp": 59,
+    "fp": 26,
+    "tn": 42622,
+    "fn": 15
+  },
+  "isolation_forest": {
+    "model": "Isolation Forest",
+    "roc_auc": 0.9118,
+    "pr_auc": 0.0693,
+    "f1": 0.0367,
+    "f2": 0.0853,
+    "precision": 0.0188,
+    "recall": 0.7297,
+    "fpr": 0.0,
+    "threshold": 0.5
+  }
+}

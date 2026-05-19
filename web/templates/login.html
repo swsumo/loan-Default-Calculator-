@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% if mode == 'signup' %}Sign Up{% else %}Login{% endif %} — Fraud Detection</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+<div class="auth-page">
+  <div class="auth-card">
+
+    <!-- Header -->
+    <div class="auth-header">
+      <h1>Fraud Detection</h1>
+      <p>Powered by XGBoost + Anomaly Detection</p>
+    </div>
+
+    <!-- Body -->
+    <div class="auth-body">
+      <!-- Tab switcher -->
+      <div class="auth-tabs">
+        <button class="auth-tab {% if mode == 'login' %}active{% endif %}"
+                onclick="window.location='{{ url_for('login') }}'">Login</button>
+        <button class="auth-tab {% if mode == 'signup' %}active{% endif %}"
+                onclick="window.location='{{ url_for('signup') }}'">Sign Up</button>
+      </div>
+
+      <!-- Alerts -->
+      {% if error %}
+      <div class="notice notice-error">⚠ {{ error }}</div>
+      {% endif %}
+      {% if success %}
+      <div class="notice notice-success">✓ {{ success }}</div>
+      {% endif %}
+
+      <!-- LOGIN FORM -->
+      {% if mode == 'login' %}
+      <form method="POST" action="{{ url_for('login') }}">
+        <div class="form-group">
+          <label class="form-label">Username</label>
+          <input type="text" name="username" class="form-control"
+                 placeholder="Enter username" autocomplete="username" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Password</label>
+          <input type="password" name="password" class="form-control"
+                 placeholder="Enter password" autocomplete="current-password" required>
+        </div>
+        <button type="submit" class="btn btn-primary btn-block btn-lg" style="margin-top:8px;">
+          Login →
+        </button>
+      </form>
+
+      <!-- SIGNUP FORM -->
+      {% else %}
+      <form method="POST" action="{{ url_for('signup') }}">
+        <div class="form-grid-2">
+          <div class="form-group">
+            <label class="form-label">Full Name</label>
+            <input type="text" name="full_name" class="form-control"
+                   placeholder="Your full name">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Username *</label>
+            <input type="text" name="username" class="form-control"
+                   placeholder="Choose username" autocomplete="username" required>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Department / Team</label>
+          <input type="text" name="department" class="form-control"
+                 placeholder="e.g. Risk & Compliance">
+        </div>
+        <div class="form-grid-2">
+          <div class="form-group">
+            <label class="form-label">Password *</label>
+            <input type="password" name="password" class="form-control"
+                   placeholder="Min 6 characters" autocomplete="new-password" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Confirm Password *</label>
+            <input type="password" name="confirm" class="form-control"
+                   placeholder="Repeat password" autocomplete="new-password" required>
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary btn-block btn-lg" style="margin-top:8px;">
+          Create Account →
+        </button>
+        <p class="text-muted text-sm" style="margin-top:10px;text-align:center;">
+          New accounts get <strong>viewer</strong> role. An admin can upgrade access.
+        </p>
+      </form>
+      {% endif %}
+    </div>
+
+    <!-- Footer -->
+    <div class="auth-footer">
+      Demo credentials: <strong>demo</strong> / <strong>demo123</strong>
+    </div>
+  </div>
+</div>
+</body>
+</html>
